@@ -315,27 +315,46 @@
   function uid(){ return 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
   function fillTemplate(tpl, data){ return String(tpl||'').replace(/\{(\w+)\}/g, (m,key)=> (data[key]!==undefined && data[key]!==null && data[key]!=='') ? data[key] : m); }
 
-  async function safeGet(key, shared){
+  // PENTING: window.storage hanya berfungsi di dalam preview Claude, TIDAK di website yang
+  // sudah di-hosting sendiri (GitHub Pages, dsb). Supaya data admin (peserta, nilai, dsb) benar-benar
+  // tersimpan permanen di GitHub Pages, portal ini memakai Google Apps Script sebagai backend gratis.
+  // WAJIB DIISI: ganti nilai di bawah ini dengan URL Web App Google Apps Script kamu (lihat panduan setup).
+  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbzxMFMrBR3piWVW7lB4LRB_A4PwLQlg4HbgWMRPMc0fML4G4SNVQkUB1IfHsr2DwYsi9w/exec";
+
+  async function safeGet(key){
+    if(!BACKEND_URL || BACKEND_URL.indexOf('PASTE_URL') === 0){
+      console.warn('BACKEND_URL belum diisi. Data tidak akan tersimpan permanen.');
+      return null;
+    }
     try{
-      const res = await window.storage.get(key, shared);
-      return res ? JSON.parse(res.value) : null;
+      const res = await fetch(BACKEND_URL + '?key=' + encodeURIComponent(key));
+      const data = await res.json();
+      return (data && data.value) ? JSON.parse(data.value) : null;
     }catch(e){ return null; }
   }
-  async function safeSet(key, value, shared){
+  async function safeSet(key, value){
+    if(!BACKEND_URL || BACKEND_URL.indexOf('PASTE_URL') === 0){
+      console.warn('BACKEND_URL belum diisi. Data tidak akan tersimpan permanen.');
+      return false;
+    }
     try{
-      const res = await window.storage.set(key, JSON.stringify(value), shared);
-      return !!res;
+      await fetch(BACKEND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ key, value: JSON.stringify(value) })
+      });
+      return true;
     }catch(e){ return false; }
   }
 
   async function loadAll(){
     const [p, links, results, kkmVal, m, cert] = await Promise.all([
-      safeGet('peserta_data', true),
-      safeGet('posttest_links', true),
-      safeGet('posttest_results', true),
-      safeGet('posttest_kkm', true),
-      safeGet('menu_config', true),
-      safeGet('sertifikat_config', true)
+      safeGet('peserta_data'),
+      safeGet('posttest_links'),
+      safeGet('posttest_results'),
+      safeGet('posttest_kkm'),
+      safeGet('menu_config'),
+      safeGet('sertifikat_config')
     ]);
     pesertaData = p || {};
     postTestLinks = links || [];
@@ -595,7 +614,7 @@
         const input = document.getElementById('admin-pin-input').value.trim();
         const msgEl = document.getElementById('admin-lock-msg');
         msgEl.innerHTML = '<div class="loading">Memeriksa PIN...</div>';
-        const storedPin = await safeGet('admin_pin', true);
+        const storedPin = await safeGet('admin_pin');
         const pin = storedPin || DEFAULT_PIN;
         if(input === pin){
           adminUnlocked = true;
@@ -764,7 +783,7 @@
               pesertaData[r.kode] = { nama:r.nama, batch:r.batch, tanggal:r.tanggal, status:r.status, catatanUmum:r.catatanUmum, kpi:r.kpi };
             });
             previewEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-            await safeSet('peserta_data', pesertaData, true);
+            await safeSet('peserta_data', pesertaData);
             importedRows = null;
             renderAdminPeserta(area);
           });
@@ -801,7 +820,7 @@
       b.addEventListener('click', async ()=>{
         if(!confirm('Hapus peserta ' + b.dataset.del + '?')) return;
         delete pesertaData[b.dataset.del];
-        await safeSet('peserta_data', pesertaData, true);
+        await safeSet('peserta_data', pesertaData);
         renderAdminPeserta(area);
       });
     });
@@ -825,7 +844,7 @@
         kpi
       };
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('peserta_data', pesertaData, true);
+      await safeSet('peserta_data', pesertaData);
       editingKode = null;
       renderAdminPeserta(area);
     });
@@ -944,7 +963,7 @@
       if(isNaN(val) || val < 0 || val > 100){ msgEl.innerHTML = '<div class="msg error">Masukkan angka 0-100.</div>'; return; }
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
       kkm = val;
-      await safeSet('posttest_kkm', kkm, true);
+      await safeSet('posttest_kkm', kkm);
       msgEl.innerHTML = '<div class="msg info">KKM berhasil disimpan.</div>';
     });
 
@@ -953,7 +972,7 @@
       b.addEventListener('click', async ()=>{
         const l = postTestLinks.find(x=>x.id===b.dataset.toggleLink);
         l.aktif = l.aktif === false ? true : false;
-        await safeSet('posttest_links', postTestLinks, true);
+        await safeSet('posttest_links', postTestLinks);
         renderAdminPostTest(area);
       });
     });
@@ -961,7 +980,7 @@
       b.addEventListener('click', async ()=>{
         if(!confirm('Hapus link post-test ini?')) return;
         postTestLinks = postTestLinks.filter(l=>l.id !== b.dataset.delLink);
-        await safeSet('posttest_links', postTestLinks, true);
+        await safeSet('posttest_links', postTestLinks);
         renderAdminPostTest(area);
       });
     });
@@ -977,7 +996,7 @@
       if(editing){ editing.judul = judul; editing.deskripsi = deskripsi; editing.url = url; }
       else{ postTestLinks.push({ id: uid(), judul, deskripsi, url, aktif:true }); }
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('posttest_links', postTestLinks, true);
+      await safeSet('posttest_links', postTestLinks);
       editingLinkId = null;
       renderAdminPostTest(area);
     });
@@ -993,7 +1012,7 @@
       if(!postTestResults[kode]) postTestResults[kode] = {};
       postTestResults[kode][linkId] = { skor, waktu: new Date().toISOString() };
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('posttest_results', postTestResults, true);
+      await safeSet('posttest_results', postTestResults);
       renderAdminPostTest(area);
     });
 
@@ -1005,7 +1024,7 @@
           delete postTestResults[kode][linkId];
           if(!Object.keys(postTestResults[kode]).length) delete postTestResults[kode];
         }
-        await safeSet('posttest_results', postTestResults, true);
+        await safeSet('posttest_results', postTestResults);
         renderAdminPostTest(area);
       });
     });
@@ -1068,7 +1087,7 @@
       const msgEl = document.getElementById('cert-config-msg');
       sertifikatConfig = currentDraftCfg();
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('sertifikat_config', sertifikatConfig, true);
+      await safeSet('sertifikat_config', sertifikatConfig);
       msgEl.innerHTML = '<div class="msg info">Pengaturan sertifikat berhasil disimpan.</div>';
     });
   }
@@ -1116,7 +1135,7 @@
       }
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
       menuConfig = menuDraft.map(t=>({...t}));
-      await safeSet('menu_config', menuConfig, true);
+      await safeSet('menu_config', menuConfig);
       renderNav();
       msgEl.innerHTML = '<div class="msg info">Menu berhasil diperbarui.</div>';
     });
@@ -1178,7 +1197,7 @@
       const msgEl = document.getElementById('pin-msg');
       if(val.length < 4){ msgEl.innerHTML = '<div class="msg error">PIN minimal 4 karakter.</div>'; return; }
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('admin_pin', val, true);
+      await safeSet('admin_pin', val);
       msgEl.innerHTML = '<div class="msg info">PIN berhasil diperbarui.</div>';
     });
   }
