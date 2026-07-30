@@ -226,6 +226,43 @@
   .preview-table-wrap{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:9px;}
 
   .brand-content p{font-size:13.5px;line-height:1.6;color:var(--text);margin:0 0 10px;}
+
+  /* Certificate */
+  .cert-wrap{
+    background:linear-gradient(160deg,#141009,#0B0906);
+    border:2px solid var(--gold);
+    border-radius:6px;
+    padding:34px 26px;
+    position:relative;
+    overflow:hidden;
+  }
+  .cert-wrap::before{content:'';position:absolute;inset:9px;border:1px solid var(--gold-deep);pointer-events:none;border-radius:2px;}
+  .cert-logo{width:56px;height:56px;object-fit:contain;margin:0 auto 10px;display:block;}
+  .cert-title{font-family:'Playfair Display',serif;font-size:20px;text-align:center;color:var(--gold-bright);letter-spacing:0.04em;margin:6px 0 2px;text-transform:uppercase;}
+  .cert-sub{text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--gold-deep);text-transform:uppercase;margin-bottom:20px;}
+  .cert-name{font-family:'Playfair Display',serif;font-size:23px;text-align:center;color:var(--text);margin:12px 0;border-bottom:1px solid var(--gold-deep);padding-bottom:10px;}
+  .cert-body{font-size:12.5px;line-height:1.8;color:var(--text);text-align:center;max-width:440px;margin:0 auto 18px;}
+  .cert-meta{display:flex;justify-content:center;gap:18px;font-size:10.5px;color:var(--text-muted);margin-bottom:24px;font-family:'JetBrains Mono',monospace;flex-wrap:wrap;}
+  .cert-sign{text-align:center;margin-top:6px;}
+  .cert-sign .line{width:150px;border-bottom:1px solid var(--gold-deep);margin:34px auto 6px;}
+  .cert-sign .name{font-weight:700;font-size:12.5px;}
+  .cert-sign .jabatan{font-size:10.5px;color:var(--text-muted);}
+  .cert-footer{text-align:center;margin-top:18px;font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.03em;}
+  #cert-print-area{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #cert-print-area, #cert-print-area *{visibility:visible;}
+    #cert-print-area{display:block;position:absolute;top:0;left:0;width:100%;padding:24px;}
+    #cert-print-area .cert-wrap{background:#fff !important;color:#161310 !important;border-color:#B8860B !important;box-shadow:none;}
+    #cert-print-area .cert-wrap::before{border-color:#B8860B !important;}
+    #cert-print-area .cert-title{color:#8A6A12 !important;}
+    #cert-print-area .cert-name{color:#161310 !important;border-color:#B8860B !important;}
+    #cert-print-area .cert-body{color:#2B2620 !important;}
+    #cert-print-area .cert-meta{color:#555 !important;}
+    #cert-print-area .cert-sign .line{border-color:#B8860B !important;}
+    #cert-print-area .cert-sign .jabatan{color:#555 !important;}
+    #cert-print-area .cert-footer{color:#777 !important;}
+  }
 </style>
 </head>
 <body>
@@ -242,6 +279,8 @@
   <div id="tab-content"></div>
 </div>
 
+<div id="cert-print-area"></div>
+
 <script>
 (function(){
   const DEFAULT_PIN = "emas2026";
@@ -251,15 +290,21 @@
     { id:'rapot', type:'core-rapot', label:'Rapot', visible:true }
   ];
 
-  // ================= KONFIGURASI PENYIMPANAN =================
-  // GANTI DI SINI: tempel URL Web App Google Apps Script kamu (lihat Code.gs untuk cara setup).
-  // Formatnya: https://script.google.com/macros/s/XXXXXXXXXXXXXXXX/exec
-  const STORAGE_API_URL = "https://script.google.com/macros/s/AKfycbySVDqF9aW5sgoxxDMyt8lP6Vo2v0RADOTPoEFf4xooou0nzbDYUyrv6Qdhw9Y8yDt-/exec";
+  const DEFAULT_CERT_CONFIG = {
+    programName: 'Sertifikasi Kompetensi Penjualan Emas',
+    perusahaan: 'Jual Emas Indonesia',
+    penandatangan: 'Syafran Umari, SE',
+    jabatan: 'General Manager',
+    templateLulus: 'Sertifikat ini diberikan kepada {nama} sebagai bukti bahwa yang bersangkutan telah mengikuti rangkaian program pelatihan {program} yang diselenggarakan oleh {perusahaan}, dan dinyatakan LULUS berdasarkan hasil evaluasi yang telah ditetapkan.\n\nSertifikat ini merupakan bentuk pengakuan resmi atas kompetensi, dedikasi, dan komitmen yang telah ditunjukkan selama mengikuti program pelatihan.',
+    templateTidakLulus: 'Surat keterangan ini menyatakan bahwa {nama} telah mengikuti program pelatihan {program} yang diselenggarakan oleh {perusahaan}.\n\nBerdasarkan hasil evaluasi, yang bersangkutan belum memenuhi standar kelulusan yang ditetapkan pada periode ini. Kami mengapresiasi partisipasi yang telah diberikan dan mendorong yang bersangkutan untuk mengikuti sesi pembinaan lanjutan guna mencapai standar kompetensi yang diharapkan.'
+  };
 
   let pesertaData = {};
-  let soalBank = [];
-  let hasilTest = {};
+  let postTestLinks = [];
+  let postTestResults = {};
+  let kkm = 80;
   let menuConfig = DEFAULT_MENU.map(t=>({...t}));
+  let sertifikatConfig = {...DEFAULT_CERT_CONFIG};
   let adminUnlocked = false;
   let activeTabId = null;
   let importedRows = null;
@@ -268,50 +313,36 @@
   function normKode(k){ return (k || "").trim().toUpperCase(); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function uid(){ return 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+  function fillTemplate(tpl, data){ return String(tpl||'').replace(/\{(\w+)\}/g, (m,key)=> (data[key]!==undefined && data[key]!==null && data[key]!=='') ? data[key] : m); }
 
-  function storageReady(){
-    return STORAGE_API_URL && STORAGE_API_URL.indexOf('GANTI_DENGAN') === -1;
-  }
-
-  // safeGet/safeSet dulunya pakai window.storage (cuma jalan di dalam Claude.ai).
-  // Sekarang pakai Google Apps Script + Google Sheets sebagai database bersama,
-  // supaya admin dan peserta yang buka dari HP/laptop masing-masing tetap
-  // melihat data yang sama. shared_param dibiarkan agar signature lama tetap kompatibel.
-  async function safeGet(key, shared_param){
-    if(!storageReady()) return null;
+  async function safeGet(key, shared){
     try{
-      const res = await fetch(`${STORAGE_API_URL}?key=${encodeURIComponent(key)}&t=${Date.now()}`);
-      if(!res.ok) return null;
-      const data = await res.json();
-      if(!data || data.value === null || data.value === undefined || data.value === '') return null;
-      return JSON.parse(data.value);
+      const res = await window.storage.get(key, shared);
+      return res ? JSON.parse(res.value) : null;
     }catch(e){ return null; }
   }
-  async function safeSet(key, value, shared_param){
-    if(!storageReady()) return false;
+  async function safeSet(key, value, shared){
     try{
-      const res = await fetch(STORAGE_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // hindari CORS preflight di Apps Script
-        body: JSON.stringify({ key, value: JSON.stringify(value) })
-      });
-      if(!res.ok) return false;
-      const data = await res.json();
-      return !!(data && data.success);
+      const res = await window.storage.set(key, JSON.stringify(value), shared);
+      return !!res;
     }catch(e){ return false; }
   }
 
   async function loadAll(){
-    const [p, s, h, m] = await Promise.all([
+    const [p, links, results, kkmVal, m, cert] = await Promise.all([
       safeGet('peserta_data', true),
-      safeGet('soal_bank', true),
-      safeGet('hasil_test', true),
-      safeGet('menu_config', true)
+      safeGet('posttest_links', true),
+      safeGet('posttest_results', true),
+      safeGet('posttest_kkm', true),
+      safeGet('menu_config', true),
+      safeGet('sertifikat_config', true)
     ]);
     pesertaData = p || {};
-    soalBank = s || [];
-    hasilTest = h || {};
+    postTestLinks = links || [];
+    postTestResults = results || {};
+    kkm = (kkmVal !== null && kkmVal !== undefined) ? kkmVal : 80;
     menuConfig = (m && m.length) ? m : DEFAULT_MENU.map(t=>({...t}));
+    sertifikatConfig = cert ? {...DEFAULT_CERT_CONFIG, ...cert} : {...DEFAULT_CERT_CONFIG};
   }
 
   // ================= NAV =================
@@ -384,15 +415,74 @@
       if(!p){ msgEl.innerHTML = '<div class="msg error">Kode tidak ditemukan. Periksa kembali kode unik kamu, atau hubungi trainer.</div>'; return; }
       const statusClass = p.status === 'LULUS' ? 'pass' : (p.status === 'TIDAK LULUS' ? 'fail' : 'pending');
       const statusLabel = p.status === 'LULUS' ? 'LULUS' : (p.status === 'TIDAK LULUS' ? 'TIDAK LULUS' : 'MENUNGGU');
+      let certButton = '';
+      if(p.status === 'LULUS') certButton = '<button class="btn" id="lihat-sertifikat-btn">Lihat Sertifikat Kelulusan</button>';
+      else if(p.status === 'TIDAK LULUS') certButton = '<button class="btn secondary" id="lihat-sertifikat-btn">Lihat Surat Keterangan</button>';
       resultEl.innerHTML = `
         <div class="card" style="text-align:center;">
           <div class="seal-wrap"><div class="seal ${statusClass}"><div class="status-word">${statusLabel}</div></div></div>
           <h2 style="margin-bottom:2px;">${esc(p.nama || '-')}</h2>
           <p class="hint" style="margin-bottom:0;">Kode: ${esc(kode)}${p.batch ? ' &middot; Batch '+esc(p.batch) : ''}</p>
+          ${certButton}
         </div>
         ${p.catatanUmum ? `<div class="card"><h2>Catatan Trainer</h2><p style="font-size:13.5px;color:var(--text-muted);margin:0;">${esc(p.catatanUmum)}</p></div>` : ''}
+        <div id="cert-area"></div>
       `;
+      const certBtn = document.getElementById('lihat-sertifikat-btn');
+      if(certBtn){
+        certBtn.addEventListener('click', ()=> showCertificate(kode, p, p.status === 'LULUS'));
+      }
     });
+  }
+
+  // ================= SERTIFIKAT =================
+  function certInnerHTML(p, kode, isLulus, cfg){
+    const logoSrc = document.querySelector('.logo-img') ? document.querySelector('.logo-img').src : '';
+    const tpl = isLulus ? cfg.templateLulus : cfg.templateTidakLulus;
+    const data = { nama: p.nama || '-', kode, batch: p.batch || '-', tanggal: p.tanggal || '-', program: cfg.programName || '-', perusahaan: cfg.perusahaan || '-' };
+    const filled = fillTemplate(tpl, data);
+    const bodyHtml = esc(filled).split(/\n+/).filter(Boolean).map(par=>`<p style="margin:0 0 10px;">${par}</p>`).join('');
+    const title = isLulus ? 'Sertifikat Kelulusan' : 'Surat Keterangan Keikutsertaan';
+    return `
+      <div class="cert-wrap">
+        ${logoSrc ? `<img src="${logoSrc}" class="cert-logo" alt="logo" />` : ''}
+        <div class="cert-title">${esc(title)}</div>
+        <div class="cert-sub">${esc(cfg.perusahaan || '')}</div>
+        <div class="cert-name">${esc(p.nama || '-')}</div>
+        <div class="cert-body">${bodyHtml}</div>
+        <div class="cert-meta">
+          <span>Kode: ${esc(kode)}</span>
+          ${p.batch ? `<span>Batch: ${esc(p.batch)}</span>` : ''}
+          <span>Tanggal: ${esc(p.tanggal || '-')}</span>
+        </div>
+        <div class="cert-sign">
+          <div class="line"></div>
+          <div class="name">${esc(cfg.penandatangan || '-')}</div>
+          <div class="jabatan">${esc(cfg.jabatan || '-')}</div>
+        </div>
+        <div class="cert-footer">Kode Verifikasi: ${esc(kode)} &middot; ${esc(cfg.perusahaan || '')}</div>
+      </div>
+    `;
+  }
+
+  async function showCertificate(kode, p, isLulus){
+    const certArea = document.getElementById('cert-area');
+    if(certArea) certArea.innerHTML = '<div class="loading">Menyiapkan sertifikat...</div>';
+    await loadAll();
+    const cfg = sertifikatConfig;
+    const inner = certInnerHTML(p, kode, isLulus, cfg);
+    if(certArea){
+      certArea.innerHTML = `
+        <div class="card">
+          ${inner}
+          <button class="btn secondary" id="cetak-sertifikat-btn">Cetak / Simpan sebagai PDF</button>
+        </div>
+      `;
+      document.getElementById('cetak-sertifikat-btn').addEventListener('click', ()=>{
+        document.getElementById('cert-print-area').innerHTML = inner;
+        window.print();
+      });
+    }
   }
 
   // ================= RAPOT =================
@@ -435,15 +525,15 @@
     });
   }
 
-  // ================= POST TEST =================
+  // ================= POST TEST (link eksternal + nilai) =================
   function renderTestPanel(area){
     area.innerHTML = `
       <div class="card" id="test-entry-card">
         <h2>Post-Test Training</h2>
-        <p class="hint">Masukkan kode unik kamu untuk memulai post-test.</p>
+        <p class="hint">Masukkan kode unik kamu untuk melihat daftar post-test dan nilai kamu. KKM kelulusan: ${esc(kkm)}.</p>
         <label>Kode Unik Peserta</label>
         <input type="text" id="test-kode" class="mono" placeholder="Contoh: JEI-0231" autocomplete="off" />
-        <button class="btn" id="test-start-btn">Mulai Post-Test</button>
+        <button class="btn" id="test-start-btn">Lihat Post-Test</button>
         <div id="test-msg"></div>
       </div>
       <div id="test-area"></div>
@@ -451,77 +541,41 @@
     document.getElementById('test-start-btn').addEventListener('click', async ()=>{
       const kode = normKode(document.getElementById('test-kode').value);
       const msgEl = document.getElementById('test-msg');
-      msgEl.innerHTML = '';
+      const testArea = document.getElementById('test-area');
+      msgEl.innerHTML = ''; testArea.innerHTML = '';
       if(!kode){ msgEl.innerHTML = '<div class="msg error">Masukkan kode unik terlebih dahulu.</div>'; return; }
-      msgEl.innerHTML = '<div class="loading">Memuat soal...</div>';
+      msgEl.innerHTML = '<div class="loading">Memuat data...</div>';
       await loadAll();
       msgEl.innerHTML = '';
       const p = pesertaData[kode];
       if(!p){ msgEl.innerHTML = '<div class="msg error">Kode tidak ditemukan. Periksa kembali kode unik kamu.</div>'; return; }
-      if(!soalBank.length){ msgEl.innerHTML = '<div class="msg info">Belum ada soal post-test yang tersedia dari trainer.</div>'; return; }
-      document.getElementById('test-entry-card').style.display = 'none';
-      renderTestResultOrForm(kode, p);
-    });
-  }
-
-  function renderTestResultOrForm(kode, p){
-    const area = document.getElementById('test-area');
-    const prev = hasilTest[kode];
-    if(prev){
-      area.innerHTML = `
-        <div class="card" style="text-align:center;">
-          <h2>Hasil Post-Test Kamu</h2>
-          <p class="hint">${esc(p.nama || '')}</p>
-          <div style="font-family:'Playfair Display',serif;font-size:40px;font-weight:700;color:var(--gold-bright);margin:8px 0;">${prev.skor}</div>
-          <p class="hint" style="margin-bottom:16px;">Benar ${prev.benar} dari ${prev.total} soal</p>
-          <button class="btn secondary" id="retake-btn">Ulangi Post-Test</button>
-        </div>
-      `;
-      document.getElementById('retake-btn').addEventListener('click', ()=> renderTestForm(kode, p));
-      return;
-    }
-    renderTestForm(kode, p);
-  }
-
-  function renderTestForm(kode, p){
-    const area = document.getElementById('test-area');
-    const qHtml = soalBank.map((q, i) => `
-      <div class="q-block">
-        <div class="q-text">${i+1}. ${esc(q.pertanyaan)}</div>
-        ${q.opsi.map((o, oi) => `
-          <label class="opt-label">
-            <input type="radio" name="${q.id}" value="${oi}" />
-            <span>${esc(o)}</span>
-          </label>
-        `).join('')}
-      </div>
-    `).join('');
-    area.innerHTML = `
-      <div class="card">
-        <h2>Post-Test &mdash; ${esc(p.nama || '')}</h2>
-        <p class="hint">Jawab seluruh ${soalBank.length} soal di bawah ini, lalu kirim jawabanmu.</p>
-      </div>
-      ${qHtml}
-      <button class="btn" id="submit-test-btn">Kirim Jawaban</button>
-      <div id="submit-test-msg"></div>
-    `;
-    document.getElementById('submit-test-btn').addEventListener('click', async ()=>{
-      const msgEl = document.getElementById('submit-test-msg');
-      let answered = 0, benar = 0;
-      const jawabanPeserta = [];
-      soalBank.forEach(q=>{
-        const sel = document.querySelector(`input[name="${q.id}"]:checked`);
-        const val = sel ? parseInt(sel.value, 10) : null;
-        if(val !== null) answered++;
-        if(val === q.jawaban) benar++;
-        jawabanPeserta.push({ id: q.id, jawaban: val });
-      });
-      if(answered < soalBank.length){ msgEl.innerHTML = '<div class="msg error">Masih ada soal yang belum dijawab.</div>'; return; }
-      const skor = Math.round((benar / soalBank.length) * 100);
-      hasilTest[kode] = { skor, benar, total: soalBank.length, waktu: new Date().toISOString(), jawaban: jawabanPeserta };
-      msgEl.innerHTML = '<div class="loading">Menyimpan hasil...</div>';
-      await safeSet('hasil_test', hasilTest, true);
-      renderTestResultOrForm(kode, p);
+      const aktifLinks = postTestLinks.filter(l => l.aktif !== false);
+      if(!aktifLinks.length){
+        testArea.innerHTML = '<div class="card"><div class="empty">Belum ada post-test yang tersedia dari trainer.</div></div>';
+        return;
+      }
+      const hasilPeserta = postTestResults[kode] || {};
+      testArea.innerHTML = aktifLinks.map(link=>{
+        const h = hasilPeserta[link.id];
+        let nilaiHtml = '<p class="hint" style="margin:10px 0 0;">Nilai belum diinput oleh admin.</p>';
+        if(h){
+          const lulus = Number(h.skor) >= Number(kkm);
+          nilaiHtml = `
+            <div class="kv" style="margin-top:10px;">
+              <span class="k">Nilai kamu</span>
+              <span class="v">${esc(h.skor)} &middot; <span class="badge ${lulus?'pass':'fail'}">${lulus?'LULUS':'TIDAK LULUS'}</span></span>
+            </div>
+          `;
+        }
+        return `
+          <div class="card">
+            <h2>${esc(link.judul)}</h2>
+            <p class="hint">${esc(link.deskripsi || '')}</p>
+            <a href="${esc(link.url)}" target="_blank" rel="noopener"><button class="btn secondary" type="button">Buka Post-Test &rarr;</button></a>
+            ${nilaiHtml}
+          </div>
+        `;
+      }).join('');
     });
   }
 
@@ -562,8 +616,8 @@
     area.innerHTML = `
       <div class="sub-tabs">
         <button data-sub="peserta" class="${adminSubTab==='peserta'?'active':''}">Peserta</button>
-        <button data-sub="soal" class="${adminSubTab==='soal'?'active':''}">Bank Soal</button>
-        <button data-sub="hasil" class="${adminSubTab==='hasil'?'active':''}">Hasil Test</button>
+        <button data-sub="posttest" class="${adminSubTab==='posttest'?'active':''}">Post Test</button>
+        <button data-sub="sertifikat" class="${adminSubTab==='sertifikat'?'active':''}">Sertifikat</button>
         <button data-sub="menu" class="${adminSubTab==='menu'?'active':''}">Menu</button>
         <button data-sub="pin" class="${adminSubTab==='pin'?'active':''}">PIN</button>
       </div>
@@ -574,8 +628,8 @@
     });
     const sub = document.getElementById('admin-sub-area');
     if(adminSubTab === 'peserta') renderAdminPeserta(sub);
-    else if(adminSubTab === 'soal') renderAdminSoal(sub);
-    else if(adminSubTab === 'hasil') renderAdminHasil(sub);
+    else if(adminSubTab === 'posttest') renderAdminPostTest(sub);
+    else if(adminSubTab === 'sertifikat') renderAdminSertifikat(sub);
     else if(adminSubTab === 'menu') renderAdminMenu(sub);
     else if(adminSubTab === 'pin') renderAdminPin(sub);
   }
@@ -611,6 +665,8 @@
         <input type="text" id="f-nama" />
         <label>Batch / Angkatan</label>
         <input type="text" id="f-batch" />
+        <label>Tanggal Kelulusan</label>
+        <input type="text" id="f-tanggal" placeholder="mis. 30 Juli 2026" />
         <label>Status Kelulusan</label>
         <select id="f-status">
           <option value="PENDING">Menunggu</option>
@@ -652,8 +708,8 @@
     // Excel import wiring
     document.getElementById('download-template-btn').addEventListener('click', ()=>{
       const wsData = [
-        ['Kode','Nama','Batch','Status','Catatan','KPI: Kedisiplinan','KPI: Kerapian','KPI: Pengetahuan Produk'],
-        ['JEI-0001','Contoh Nama','Batch 1','LULUS','Catatan opsional',85,90,88]
+        ['Kode','Nama','Batch','Status','Tanggal','Catatan','KPI: Kedisiplinan','KPI: Kerapian','KPI: Pengetahuan Produk'],
+        ['JEI-0001','Contoh Nama','Batch 1','LULUS','30 Juli 2026','Catatan opsional',85,90,88]
       ];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
@@ -678,6 +734,7 @@
             const kode = normKode(findCol(row, ['Kode']));
             const nama = String(findCol(row, ['Nama'])).trim();
             const batch = String(findCol(row, ['Batch'])).trim();
+            const tanggal = String(findCol(row, ['Tanggal'])).trim();
             let status = String(findCol(row, ['Status'])).trim().toUpperCase();
             if(!['LULUS','TIDAK LULUS','PENDING'].includes(status)) status = 'PENDING';
             const catatanUmum = String(findCol(row, ['Catatan'])).trim();
@@ -689,56 +746,26 @@
                 if(aspek && String(skor).trim() !== '') kpi.push({ aspek, skor, catatan:'' });
               }
             });
-            return { kode, nama, batch, status, catatanUmum, kpi };
+            return { kode, nama, batch, tanggal, status, catatanUmum, kpi };
           }).filter(r=>r.kode && r.nama);
           if(!importedRows.length){
             previewEl.innerHTML = '<div class="msg error">Tidak ada baris valid (kolom Kode dan Nama wajib diisi).</div>';
             return;
           }
           previewEl.innerHTML = `
-            <div class="msg info">${importedRows.length} peserta siap diimpor. Cek dulu tabelnya, lalu klik Simpan.</div>
+            <div class="msg info">${importedRows.length} peserta siap diimpor.</div>
             <div class="preview-table-wrap"><table><thead><tr><th>Kode</th><th>Nama</th><th>Status</th><th>KPI</th></tr></thead><tbody>
               ${importedRows.slice(0,50).map(r=>`<tr><td class="mono" style="font-family:'JetBrains Mono',monospace;">${esc(r.kode)}</td><td>${esc(r.nama)}</td><td>${esc(r.status)}</td><td>${r.kpi.length} aspek</td></tr>`).join('')}
             </tbody></table></div>
-            <button class="btn" id="confirm-import-btn">Simpan ${importedRows.length} Peserta</button>
+            <button class="btn" id="confirm-import-btn">Import ${importedRows.length} Peserta Sekarang</button>
           `;
           document.getElementById('confirm-import-btn').addEventListener('click', async ()=>{
-            const rowsToSave = importedRows;
-            const btn = document.getElementById('confirm-import-btn');
-            btn.disabled = true;
-            previewEl.insertAdjacentHTML('beforeend', '<div class="msg info" id="save-status">Menyimpan ke database...</div>');
-            const statusEl = document.getElementById('save-status');
-
-            // gabungkan data baru ke data lama, tapi jangan sentuh pesertaData asli
-            // sampai kita yakin penyimpanan ke server berhasil
-            const merged = { ...pesertaData };
-            rowsToSave.forEach(r=>{
-              merged[r.kode] = { nama:r.nama, batch:r.batch, status:r.status, catatanUmum:r.catatanUmum, kpi:r.kpi };
+            importedRows.forEach(r=>{
+              pesertaData[r.kode] = { nama:r.nama, batch:r.batch, tanggal:r.tanggal, status:r.status, catatanUmum:r.catatanUmum, kpi:r.kpi };
             });
-
-            const ok = await safeSet('peserta_data', merged, true);
-            if(!ok){
-              statusEl.className = 'msg error';
-              statusEl.innerHTML = 'Gagal menyimpan ke database. Cek koneksi internet, lalu coba lagi. (Data belum tersimpan, aman untuk klik ulang.)';
-              btn.disabled = false;
-              return;
-            }
-
-            statusEl.innerHTML = 'Memverifikasi data tersimpan...';
-            const verify = await safeGet('peserta_data', true);
-            const allSaved = verify && rowsToSave.every(r => verify[r.kode] && verify[r.kode].nama === r.nama);
-
-            if(!allSaved){
-              statusEl.className = 'msg error';
-              statusEl.innerHTML = 'Data terkirim, tapi verifikasi gagal. Coba refresh halaman lalu cek ulang Daftar Peserta di bawah sebelum upload lagi.';
-              btn.disabled = false;
-              return;
-            }
-
-            pesertaData = verify;
+            previewEl.innerHTML = '<div class="loading">Menyimpan...</div>';
+            await safeSet('peserta_data', pesertaData, true);
             importedRows = null;
-            statusEl.className = 'msg info';
-            statusEl.innerHTML = `${rowsToSave.length} peserta berhasil disimpan & terverifikasi.`;
             renderAdminPeserta(area);
           });
         }catch(err){
@@ -753,6 +780,7 @@
       document.getElementById('f-kode').value = editingKode;
       document.getElementById('f-nama').value = p.nama || '';
       document.getElementById('f-batch').value = p.batch || '';
+      document.getElementById('f-tanggal').value = p.tanggal || '';
       document.getElementById('f-status').value = p.status || 'PENDING';
       document.getElementById('f-catatan').value = p.catatanUmum || '';
       kpiDraft = (p.kpi || []).map(k=>({...k}));
@@ -791,6 +819,7 @@
       pesertaData[kode] = {
         nama,
         batch: document.getElementById('f-batch').value.trim(),
+        tanggal: document.getElementById('f-tanggal').value.trim(),
         status: document.getElementById('f-status').value,
         catatanUmum: document.getElementById('f-catatan').value.trim(),
         kpi
@@ -821,94 +850,229 @@
     wrap.querySelectorAll('[data-kpi-del]').forEach(btn=>{ btn.addEventListener('click', ()=>{ kpiDraft.splice(parseInt(btn.dataset.kpiDel,10),1); renderKpiRows(); }); });
   }
 
-  // --- Admin: Bank Soal ---
-  let editingSoalId = null;
+  // --- Admin: Post Test (link eksternal + KKM + input nilai) ---
+  let editingLinkId = null;
 
-  function renderAdminSoal(area){
-    const editing = editingSoalId ? soalBank.find(q=>q.id===editingSoalId) : null;
-    area.innerHTML = `
-      <div class="card">
-        <h2>${editing ? 'Edit Soal' : 'Tambah Soal'}</h2>
-        <label>Pertanyaan</label>
-        <textarea id="s-pertanyaan">${editing ? esc(editing.pertanyaan) : ''}</textarea>
-        <label>Opsi A</label><input type="text" id="s-opt-0" value="${editing ? esc(editing.opsi[0]) : ''}" />
-        <label>Opsi B</label><input type="text" id="s-opt-1" value="${editing ? esc(editing.opsi[1]) : ''}" />
-        <label>Opsi C</label><input type="text" id="s-opt-2" value="${editing ? esc(editing.opsi[2]) : ''}" />
-        <label>Opsi D</label><input type="text" id="s-opt-3" value="${editing ? esc(editing.opsi[3]) : ''}" />
-        <label>Jawaban Benar</label>
-        <select id="s-jawaban">
-          <option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option>
-        </select>
-        <div class="row-actions">
-          <button class="btn" id="save-soal-btn">${editing ? 'Simpan Perubahan' : 'Tambah Soal'}</button>
-          ${editing ? '<button class="btn secondary" id="cancel-soal-btn">Batal</button>' : ''}
-        </div>
-        <div id="soal-form-msg"></div>
-      </div>
-      <div class="card">
-        <h2>Bank Soal (${soalBank.length})</h2>
-        ${soalBank.length ? soalBank.map((q,i)=>`
-          <div class="q-block">
-            <div class="q-text">${i+1}. ${esc(q.pertanyaan)}</div>
-            <p class="hint" style="margin:0 0 8px;">Jawaban benar: ${['A','B','C','D'][q.jawaban]} &middot; ${esc(q.opsi[q.jawaban])}</p>
-            <div class="row-actions">
-              <button class="btn secondary small" data-edit-soal="${q.id}">Edit</button>
-              <button class="btn danger small" data-del-soal="${q.id}">Hapus</button>
-            </div>
-          </div>
-        `).join('') : '<div class="empty">Belum ada soal.</div>'}
-      </div>
-    `;
-    if(editing) document.getElementById('s-jawaban').value = editing.jawaban;
-
-    area.querySelectorAll('[data-edit-soal]').forEach(b=>{ b.addEventListener('click', ()=>{ editingSoalId = b.dataset.editSoal; renderAdminSoal(area); }); });
-    area.querySelectorAll('[data-del-soal]').forEach(b=>{
-      b.addEventListener('click', async ()=>{
-        if(!confirm('Hapus soal ini?')) return;
-        soalBank = soalBank.filter(q=>q.id !== b.dataset.delSoal);
-        await safeSet('soal_bank', soalBank, true);
-        renderAdminSoal(area);
+  function renderAdminPostTest(area){
+    const editing = editingLinkId ? postTestLinks.find(l=>l.id===editingLinkId) : null;
+    const flatResults = [];
+    Object.keys(postTestResults).forEach(kode=>{
+      Object.keys(postTestResults[kode]).forEach(linkId=>{
+        const h = postTestResults[kode][linkId];
+        const link = postTestLinks.find(l=>l.id===linkId);
+        flatResults.push({ kode, linkId, judul: link ? link.judul : '(link dihapus)', skor: h.skor, waktu: h.waktu });
       });
     });
-    const cancelBtn = document.getElementById('cancel-soal-btn');
-    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ editingSoalId = null; renderAdminSoal(area); });
+    flatResults.sort((a,b)=> (a.kode+a.linkId).localeCompare(b.kode+b.linkId));
 
-    document.getElementById('save-soal-btn').addEventListener('click', async ()=>{
-      const msgEl = document.getElementById('soal-form-msg');
-      const pertanyaan = document.getElementById('s-pertanyaan').value.trim();
-      const opsi = [0,1,2,3].map(i => document.getElementById('s-opt-'+i).value.trim());
-      const jawaban = parseInt(document.getElementById('s-jawaban').value, 10);
-      if(!pertanyaan || opsi.some(o=>!o)){ msgEl.innerHTML = '<div class="msg error">Isi pertanyaan dan keempat opsi jawaban.</div>'; return; }
-      if(editing){ editing.pertanyaan = pertanyaan; editing.opsi = opsi; editing.jawaban = jawaban; }
-      else{ soalBank.push({ id: uid(), pertanyaan, opsi, jawaban }); }
+    area.innerHTML = `
+      <div class="card">
+        <h2>KKM (Kriteria Kelulusan Minimum)</h2>
+        <p class="hint">Nilai minimum untuk dinyatakan lulus post-test.</p>
+        <label>KKM</label>
+        <input type="number" id="kkm-input" value="${esc(kkm)}" min="0" max="100" />
+        <button class="btn secondary" id="save-kkm-btn">Simpan KKM</button>
+        <div id="kkm-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>${editing ? 'Edit Link Post-Test' : 'Tambah Link Post-Test'}</h2>
+        <p class="hint">Isi link Google Docs/Form post-test beserta deskripsinya. Peserta akan melihat ini di menu Post Test.</p>
+        <label>Judul</label>
+        <input type="text" id="l-judul" value="${editing ? esc(editing.judul) : ''}" placeholder="mis. Post-Test Modul 1" />
+        <label>Deskripsi</label>
+        <textarea id="l-deskripsi" placeholder="Penjelasan singkat tentang post-test ini">${editing ? esc(editing.deskripsi) : ''}</textarea>
+        <label>URL Google Docs/Form</label>
+        <input type="text" id="l-url" class="mono" value="${editing ? esc(editing.url) : ''}" placeholder="https://docs.google.com/..." />
+        <div class="row-actions">
+          <button class="btn" id="save-link-btn">${editing ? 'Simpan Perubahan' : 'Tambah Link'}</button>
+          ${editing ? '<button class="btn secondary" id="cancel-link-btn">Batal</button>' : ''}
+        </div>
+        <div id="link-form-msg"></div>
+      </div>
+      <div class="card">
+        <h2>Daftar Link Post-Test (${postTestLinks.length})</h2>
+        ${postTestLinks.length ? postTestLinks.map(l=>`
+          <div class="q-block">
+            <div class="q-text">${esc(l.judul)} ${l.aktif===false ? '<span class="badge pending">Nonaktif</span>' : ''}</div>
+            <p class="hint" style="margin:0 0 8px;">${esc(l.deskripsi||'')}</p>
+            <div class="row-actions">
+              <button class="btn secondary small" data-edit-link="${l.id}">Edit</button>
+              <button class="btn secondary small" data-toggle-link="${l.id}">${l.aktif===false ? 'Aktifkan' : 'Nonaktifkan'}</button>
+              <button class="btn danger small" data-del-link="${l.id}">Hapus</button>
+            </div>
+          </div>
+        `).join('') : '<div class="empty">Belum ada link post-test.</div>'}
+      </div>
+
+      <div class="card">
+        <h2>Input / Update Nilai Peserta</h2>
+        <label>Kode Unik Peserta</label>
+        <input type="text" id="n-kode" class="mono" placeholder="Contoh: JEI-0231" />
+        <label>Link Post-Test</label>
+        <select id="n-link">
+          <option value="">-- Pilih link --</option>
+          ${postTestLinks.map(l=>`<option value="${l.id}">${esc(l.judul)}</option>`).join('')}
+        </select>
+        <label>Skor (0-100)</label>
+        <input type="number" id="n-skor" min="0" max="100" />
+        <button class="btn" id="save-nilai-btn">Simpan Nilai</button>
+        <div id="nilai-form-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Rekap Nilai Peserta (${flatResults.length})</h2>
+        ${flatResults.length ? `<div class="preview-table-wrap"><table><thead><tr><th>Kode</th><th>Nama</th><th>Post-Test</th><th>Skor</th><th></th></tr></thead><tbody>
+          ${flatResults.map(r=>{
+            const p = pesertaData[r.kode];
+            const lulus = Number(r.skor) >= Number(kkm);
+            return `<tr>
+              <td class="mono" style="font-family:'JetBrains Mono',monospace;">${esc(r.kode)}</td>
+              <td>${esc(p ? p.nama : '-')}</td>
+              <td>${esc(r.judul)}</td>
+              <td>${esc(r.skor)} <span class="badge ${lulus?'pass':'fail'}">${lulus?'L':'TL'}</span></td>
+              <td><button class="btn danger tiny" data-del-nilai="${esc(r.kode)}|${esc(r.linkId)}">Hapus</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody></table></div>` : '<div class="empty">Belum ada nilai yang diinput.</div>'}
+      </div>
+    `;
+
+    document.getElementById('save-kkm-btn').addEventListener('click', async ()=>{
+      const msgEl = document.getElementById('kkm-msg');
+      const val = parseInt(document.getElementById('kkm-input').value, 10);
+      if(isNaN(val) || val < 0 || val > 100){ msgEl.innerHTML = '<div class="msg error">Masukkan angka 0-100.</div>'; return; }
       msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
-      await safeSet('soal_bank', soalBank, true);
-      editingSoalId = null;
-      renderAdminSoal(area);
+      kkm = val;
+      await safeSet('posttest_kkm', kkm, true);
+      msgEl.innerHTML = '<div class="msg info">KKM berhasil disimpan.</div>';
+    });
+
+    area.querySelectorAll('[data-edit-link]').forEach(b=>{ b.addEventListener('click', ()=>{ editingLinkId = b.dataset.editLink; renderAdminPostTest(area); }); });
+    area.querySelectorAll('[data-toggle-link]').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        const l = postTestLinks.find(x=>x.id===b.dataset.toggleLink);
+        l.aktif = l.aktif === false ? true : false;
+        await safeSet('posttest_links', postTestLinks, true);
+        renderAdminPostTest(area);
+      });
+    });
+    area.querySelectorAll('[data-del-link]').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        if(!confirm('Hapus link post-test ini?')) return;
+        postTestLinks = postTestLinks.filter(l=>l.id !== b.dataset.delLink);
+        await safeSet('posttest_links', postTestLinks, true);
+        renderAdminPostTest(area);
+      });
+    });
+    const cancelLinkBtn = document.getElementById('cancel-link-btn');
+    if(cancelLinkBtn) cancelLinkBtn.addEventListener('click', ()=>{ editingLinkId = null; renderAdminPostTest(area); });
+
+    document.getElementById('save-link-btn').addEventListener('click', async ()=>{
+      const msgEl = document.getElementById('link-form-msg');
+      const judul = document.getElementById('l-judul').value.trim();
+      const deskripsi = document.getElementById('l-deskripsi').value.trim();
+      const url = document.getElementById('l-url').value.trim();
+      if(!judul || !url){ msgEl.innerHTML = '<div class="msg error">Judul dan URL wajib diisi.</div>'; return; }
+      if(editing){ editing.judul = judul; editing.deskripsi = deskripsi; editing.url = url; }
+      else{ postTestLinks.push({ id: uid(), judul, deskripsi, url, aktif:true }); }
+      msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
+      await safeSet('posttest_links', postTestLinks, true);
+      editingLinkId = null;
+      renderAdminPostTest(area);
+    });
+
+    document.getElementById('save-nilai-btn').addEventListener('click', async ()=>{
+      const msgEl = document.getElementById('nilai-form-msg');
+      const kode = normKode(document.getElementById('n-kode').value);
+      const linkId = document.getElementById('n-link').value;
+      const skor = parseInt(document.getElementById('n-skor').value, 10);
+      if(!kode || !pesertaData[kode]){ msgEl.innerHTML = '<div class="msg error">Kode peserta tidak ditemukan. Tambahkan peserta terlebih dahulu di tab Peserta.</div>'; return; }
+      if(!linkId){ msgEl.innerHTML = '<div class="msg error">Pilih link post-test.</div>'; return; }
+      if(isNaN(skor) || skor < 0 || skor > 100){ msgEl.innerHTML = '<div class="msg error">Masukkan skor 0-100.</div>'; return; }
+      if(!postTestResults[kode]) postTestResults[kode] = {};
+      postTestResults[kode][linkId] = { skor, waktu: new Date().toISOString() };
+      msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
+      await safeSet('posttest_results', postTestResults, true);
+      renderAdminPostTest(area);
+    });
+
+    area.querySelectorAll('[data-del-nilai]').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        if(!confirm('Hapus nilai ini? Peserta perlu diinput ulang oleh admin jika diperlukan.')) return;
+        const [kode, linkId] = b.dataset.delNilai.split('|');
+        if(postTestResults[kode]){
+          delete postTestResults[kode][linkId];
+          if(!Object.keys(postTestResults[kode]).length) delete postTestResults[kode];
+        }
+        await safeSet('posttest_results', postTestResults, true);
+        renderAdminPostTest(area);
+      });
     });
   }
 
-  // --- Admin: Hasil Test ---
-  function renderAdminHasil(area){
-    const kodes = Object.keys(hasilTest).sort();
+  // --- Admin: Sertifikat ---
+  function renderAdminSertifikat(area){
+    const cfg = sertifikatConfig;
     area.innerHTML = `
       <div class="card">
-        <h2>Hasil Post-Test (${kodes.length})</h2>
-        ${kodes.length ? `<table><thead><tr><th>Kode</th><th>Nama</th><th>Skor</th><th>Benar</th></tr></thead><tbody>
-          ${kodes.map(k=>{
-            const h = hasilTest[k];
-            const p = pesertaData[k];
-            return `<tr>
-              <td class="mono" style="font-family:'JetBrains Mono',monospace;">${esc(k)}</td>
-              <td>${esc(p ? p.nama : '-')}</td>
-              <td>${h.skor}</td>
-              <td>${h.benar}/${h.total}</td>
-            </tr>`;
-          }).join('')}
-        </tbody></table>` : '<div class="empty">Belum ada peserta yang mengikuti post-test.</div>'}
+        <h2>Pengaturan Sertifikat</h2>
+        <p class="hint">Placeholder yang bisa dipakai di teks sertifikat: <b>{nama} {kode} {batch} {tanggal} {program} {perusahaan}</b></p>
+        <label>Nama Program Pelatihan</label>
+        <input type="text" id="c-program" value="${esc(cfg.programName)}" />
+        <label>Nama Perusahaan</label>
+        <input type="text" id="c-perusahaan" value="${esc(cfg.perusahaan)}" />
+        <label>Nama Penandatangan</label>
+        <input type="text" id="c-penandatangan" value="${esc(cfg.penandatangan)}" placeholder="mis. Syafran Umari, SE" />
+        <label>Jabatan Penandatangan</label>
+        <input type="text" id="c-jabatan" value="${esc(cfg.jabatan)}" placeholder="mis. General Manager" />
+        <div class="divider"></div>
+        <label style="margin-top:0;">Teks Sertifikat &mdash; Peserta LULUS</label>
+        <textarea id="c-lulus" style="min-height:110px;">${esc(cfg.templateLulus)}</textarea>
+        <label>Teks Surat Keterangan &mdash; Peserta TIDAK LULUS</label>
+        <textarea id="c-tidaklulus" style="min-height:110px;">${esc(cfg.templateTidakLulus)}</textarea>
+        <button class="btn" id="save-cert-btn">Simpan Pengaturan Sertifikat</button>
+        <div id="cert-config-msg"></div>
+      </div>
+      <div class="card">
+        <h2>Pratinjau</h2>
+        <p class="hint">Contoh tampilan sertifikat memakai data contoh.</p>
+        <div class="row-actions">
+          <button class="btn secondary small" id="preview-lulus-btn">Pratinjau Sertifikat Lulus</button>
+          <button class="btn secondary small" id="preview-tidaklulus-btn">Pratinjau Surat Keterangan</button>
+        </div>
+        <div id="cert-preview-area" style="margin-top:16px;"></div>
       </div>
     `;
+
+    function currentDraftCfg(){
+      return {
+        programName: document.getElementById('c-program').value.trim(),
+        perusahaan: document.getElementById('c-perusahaan').value.trim(),
+        penandatangan: document.getElementById('c-penandatangan').value.trim(),
+        jabatan: document.getElementById('c-jabatan').value.trim(),
+        templateLulus: document.getElementById('c-lulus').value,
+        templateTidakLulus: document.getElementById('c-tidaklulus').value
+      };
+    }
+    const samplePeserta = { nama:'Nama Contoh Peserta', batch:'1', tanggal:'30 Juli 2026' };
+
+    document.getElementById('preview-lulus-btn').addEventListener('click', ()=>{
+      document.getElementById('cert-preview-area').innerHTML = `<div class="cert-wrap-outer">${certInnerHTML(samplePeserta, 'JEI-0001', true, currentDraftCfg())}</div>`;
+    });
+    document.getElementById('preview-tidaklulus-btn').addEventListener('click', ()=>{
+      document.getElementById('cert-preview-area').innerHTML = `<div class="cert-wrap-outer">${certInnerHTML(samplePeserta, 'JEI-0001', false, currentDraftCfg())}</div>`;
+    });
+
+    document.getElementById('save-cert-btn').addEventListener('click', async ()=>{
+      const msgEl = document.getElementById('cert-config-msg');
+      sertifikatConfig = currentDraftCfg();
+      msgEl.innerHTML = '<div class="loading">Menyimpan...</div>';
+      await safeSet('sertifikat_config', sertifikatConfig, true);
+      msgEl.innerHTML = '<div class="msg info">Pengaturan sertifikat berhasil disimpan.</div>';
+    });
   }
+
 
   // --- Admin: Kelola Menu ---
   let menuDraft = null;
